@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Webトリガー編集フォーム</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-6">
+  <div class="max-w-3xl mx-auto bg-white p-6 rounded-lg shadow-lg">
+    <h2 class="text-lg font-bold mb-4">Webトリガー編集フォーム</h2>
+    <input type="file" id="jsonInput" class="w-80 p-2 rounded bg-gray-50" accept=".json" onchange="importJson()">
+    <div id="triggers-container" class="mt-4 space-y-2"></div>
+    <button onclick="addTrigger()" class="mt-4 bg-blue-500 text-white px-7 py-2 rounded-3xl">トリガー追加</button>
+    <button id="saveBtn" onclick="exportJson()" class="mt-4 bg-green-500 text-white px-7 py-2 rounded-3xl">JSON保存</button>
+  </div>
+
+  <script>
+    let data = { triggers: [] };
+
+    function getRandomColor() {
+      const maxIndex = Math.floor(Math.random() * 3);
+      return [0, 1, 2].map(i => (i === maxIndex ? 1.0 : 0.5 + Math.random() * 0.5));
+    }
+
+    function rgbToHex(rgbArray) {
+      return `#${rgbArray.map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('')}`;
+    }
+
+    function hexToRgb(hex) {
+      return hex.match(/[0-9a-f]{2}/gi).map(x => parseInt(x, 16) / 255);
+    }
+
+    function addTrigger() {
+      const keyNumber = ((data.triggers.length / 2) + 1).toString().padStart(2, '0');
+      const randomColor = getRandomColor();
+      const baseName = "";
+
+      data.triggers.push(
+        {
+          displayName: `${keyNumber} ${baseName}`,
+          category: "",
+          showConfirmDialog: false,
+          color: randomColor,
+          state: [{ key: keyNumber, type: "bool", value: true }]
+        },
+        {
+          displayName: `${keyNumber} ${baseName}`,
+          category: "",
+          showConfirmDialog: false,
+          color: randomColor,
+          state: [{ key: keyNumber, type: "bool", value: false }]
+        }
+      );
+
+      renderForm();
+    }
+
+    function renderForm() {
+      const container = document.getElementById("triggers-container");
+      container.innerHTML = "";
+
+      data.triggers.forEach((trigger, index) => {
+        if (index % 2 !== 0) return;
+
+        const keyIndex = index / 2;
+        const keyNumber = (keyIndex + 1).toString().padStart(2, '0');
+        const baseName = trigger.displayName.replace(/^\d+\s+/, '').replace(/\s+(On|Off)$/, '');
+        const colorHex = rgbToHex(trigger.color);
+
+        const row = document.createElement("div");
+        row.className = "flex items-center space-x-4 p-2 bg-gray-50 rounded";
+        row.innerHTML = `
+          <span class="w-6">${keyNumber}</span>
+          <input type="text" class="name-input flex-grow p-2 border rounded" value="${baseName}" data-index="${index}" onchange="updateTrigger(${index}, this.value)">
+          <input type="color" class="w-10 h-10 border rounded cursor-pointer" value="${colorHex}" onchange="updateColor(${index}, this.value)">
+          <button onclick="removeTrigger(${index})" class="bg-pink-400 text-white px-4 py-2 rounded-3xl">削除</button>
+        `;
+        container.appendChild(row);
+      });
+
+      validateInputs();
+    }
+
+    function updateTrigger(index, value) {
+      const keyNumber = (index / 2 + 1).toString().padStart(2, '0');
+      data.triggers[index].displayName = `${keyNumber} ${value}`;
+      data.triggers[index + 1].displayName = `${keyNumber} ${value}`;
+      validateInputs();
+    }
+
+    function updateColor(index, hexColor) {
+      const sharedColor = hexToRgb(hexColor);
+      data.triggers[index].color = sharedColor;
+      data.triggers[index + 1].color = sharedColor;
+    }
+
+    function removeTrigger(index) {
+      data.triggers.splice(index, 2);
+
+      // 整列し直し
+      for (let i = 0; i < data.triggers.length; i += 2) {
+        const keyNumber = (i / 2 + 1).toString().padStart(2, '0');
+        const baseName = data.triggers[i].displayName.replace(/^\d+\s+/, '').replace(/\s+(On|Off)$/, '');
+
+        data.triggers[i].displayName = `${keyNumber} ${baseName}`;
+        data.triggers[i + 1].displayName = `${keyNumber} ${baseName}`;
+        data.triggers[i].state[0].key = keyNumber;
+        data.triggers[i + 1].state[0].key = keyNumber;
+      }
+
+      renderForm();
+    }
+
+    function exportJson() {
+      const exportData = { triggers: [] };
+
+      for (let i = 0; i < data.triggers.length; i += 2) {
+        const keyNumber = (i / 2 + 1).toString().padStart(2, '0');
+        const baseName = data.triggers[i].displayName.replace(/^\d+\s+/, '').replace(/\s+(On|Off)$/, '');
+
+        const onTrigger = { ...data.triggers[i] };
+        onTrigger.displayName = `${keyNumber} ${baseName} On`;
+        onTrigger.state[0].key = keyNumber;
+        onTrigger.state[0].value = true;
+
+        const offTrigger = { ...data.triggers[i + 1] };
+        offTrigger.displayName = `${keyNumber} ${baseName} Off`;
+        offTrigger.state[0].key = keyNumber;
+        offTrigger.state[0].value = false;
+
+        exportData.triggers.push(onTrigger, offTrigger);
+      }
+
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "triggers.json";
+      a.click();
+    }
+
+    function importJson() {
+      const fileInput = document.getElementById("jsonInput");
+      const file = fileInput.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const imported = JSON.parse(event.target.result);
+        data.triggers = [];
+
+        for (let i = 0; i < imported.triggers.length; i += 2) {
+          const triggerOn = imported.triggers[i];
+          const triggerOff = imported.triggers[i + 1];
+
+          const keyNumber = (data.triggers.length / 2 + 1).toString().padStart(2, '0');
+          const baseName = triggerOn.displayName.replace(/^\d+\s+/, '').replace(/\s+On$/, '');
+          const color = getRandomColor();
+
+          data.triggers.push(
+            {
+              displayName: `${keyNumber} ${baseName}`,
+              category: "",
+              showConfirmDialog: false,
+              color: color,
+              state: [{ key: keyNumber, type: "bool", value: true }]
+            },
+            {
+              displayName: `${keyNumber} ${baseName}`,
+              category: "",
+              showConfirmDialog: false,
+              color: color,
+              state: [{ key: keyNumber, type: "bool", value: false }]
+            }
+          );
+        }
+
+        renderForm();
+      };
+      reader.readAsText(file);
+    }
+
+    function validateInputs() {
+      const inputs = document.querySelectorAll(".name-input");
+      const saveBtn = document.getElementById("saveBtn");
+      const hasBlank = [...inputs].some(input => input.value.trim() === "");
+      saveBtn.disabled = hasBlank;
+      saveBtn.classList.toggle("opacity-50", hasBlank);
+      saveBtn.classList.toggle("cursor-not-allowed", hasBlank);
+    }
+
+    renderForm();
+  </script>
+</body>
+</html>
